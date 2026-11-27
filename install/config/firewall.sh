@@ -6,9 +6,11 @@ ufw default allow outgoing
 ufw allow 53317/udp
 ufw allow 53317/tcp
 
-# Allow Docker containers to use DNS on host.
-ufw allow in proto udp from 172.16.0.0/12 to 172.17.0.1 port 53 comment 'allow-docker-dns'
-ufw allow in proto udp from 192.168.0.0/16 to 172.17.0.1 port 53 comment 'allow-docker-dns'
+# Allow Docker containers to use DNS on host. Scope this to the Docker bridges:
+# Linux accepts packets for 172.17.0.1 on any interface, so a source-range rule
+# would also let LAN neighbors (or spoofed container addresses) query resolved.
+ufw allow in on docker0 proto udp to 172.17.0.1 port 53 comment 'allow-docker-dns'
+ufw allow in on br-+ proto udp to 172.17.0.1 port 53 comment 'allow-docker-dns'
 
 # Turn on Docker protections. ufw-docker refuses to install its after.rules
 # block unless UFW is already active, but during ISO finalization the target
