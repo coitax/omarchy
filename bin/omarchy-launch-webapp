@@ -10,4 +10,25 @@ google-chrome* | brave* | microsoft-edge* | opera* | vivaldi* | helium*) ;;
 *) browser="chromium.desktop" ;;
 esac
 
-exec setsid uwsm-app -- $(sed -n 's/^Exec=\([^ ]*\).*/\1/p' {~/.local,~/.nix-profile,/usr}/share/applications/$browser 2>/dev/null | head -1) --app="$1" "${@:2}"
+# Web apps run in the everyday browser profile, and Chromium hands every later
+# window to the process that owns it. A switch that weakens that process would
+# reach all browsing until the browser restarts, so never forward one.
+browser_args=()
+for arg in "${@:2}"; do
+  switch=${arg#-}
+  switch=${switch#-}
+  switch=${switch%%=*}
+
+  if [[ $arg == -* ]]; then
+    case $switch in
+    ignore-certificate-errors* | disable-web-security | remote-debugging-* | no-sandbox | disable-site-isolation-trials | allow-running-insecure-content | unsafely-treat-insecure-origin-as-secure)
+      echo "Ignoring unsafe browser switch: $arg" >&2
+      continue
+      ;;
+    esac
+  fi
+
+  browser_args+=("$arg")
+done
+
+exec setsid uwsm-app -- $(sed -n 's/^Exec=\([^ ]*\).*/\1/p' {~/.local,~/.nix-profile,/usr}/share/applications/$browser 2>/dev/null | head -1) --app="$1" "${browser_args[@]}"
