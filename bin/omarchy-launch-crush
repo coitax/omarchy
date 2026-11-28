@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# omarchy:summary=Start Crush interactively with a prompt on the clipboard to paste as its first message
+# omarchy:args=<prompt>
+# omarchy:hidden=true
+
+# Crush's interactive command takes no starting prompt, and `crush run`, which
+# does, approves every tool call itself. This keeps the approval prompts by
+# starting the interactive command and handing the prompt over to paste.
+
+set -euo pipefail
+
+prompt=${1:?usage: omarchy-launch-crush <prompt>}
+
+printf '%s' "$prompt" | wl-copy
+
+printf '%s\n\n' "$prompt"
+printf '%s\n' "This prompt is on the clipboard. Paste it as your first message to Crush."
+read -rsn1 -p "Press any key to start Crush..." || true
+
+exec crush

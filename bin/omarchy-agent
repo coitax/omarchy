@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # omarchy:summary=Launch the default coding agent in a terminal
-# omarchy:args=[--inline] [--pick]
-# omarchy:examples=omarchy agent | omarchy agent --inline
+# omarchy:args=[--inline] [--pick] [--supervised]
+# omarchy:examples=omarchy agent | omarchy agent --inline | omarchy agent --supervised
 
 inline=false
 pick=false
+supervised=false
 
 # Flags only. A bare prompt would shadow the subcommands under this group, so
 # prompts go through omarchy-agent-prompt, which passes one here as --prompt.
@@ -17,6 +18,10 @@ while (($#)); do
       ;;
     --pick)
       pick=true
+      shift
+      ;;
+    --supervised)
+      supervised=true
       shift
       ;;
     --prompt)
@@ -53,33 +58,59 @@ fi
 
 # Agents launched from the keybinding or menu run unattended, so each one starts
 # with its own spelling of "don't stop to ask". Pi and Ori have none to skip.
+#
+# --supervised is for prompts that carry text someone other than the user chose,
+# like a crashed process's command line: an agent that acts without asking can
+# be steered by that text into running commands. Every agent keeps its approval
+# prompts there, and none of the unattended flags below are passed.
+unattended() {
+  if [[ $supervised == "false" ]]; then
+    command+=("$@")
+  fi
+}
+
 case "$agent" in
 opencode)
-  command=(opencode --auto)
+  command=(opencode)
+  unattended --auto
   [[ -n ${prompt:-} ]] && command+=(--prompt "$prompt")
   ;;
 agy)
-  command=(agy --dangerously-skip-permissions)
+  command=(agy)
+  unattended --dangerously-skip-permissions
   [[ -n ${prompt:-} ]] && command+=(--prompt-interactive "$prompt")
   ;;
 copilot)
-  command=(copilot --allow-all)
+  command=(copilot)
+  unattended --allow-all
   [[ -n ${prompt:-} ]] && command+=(--interactive "$prompt")
   ;;
 crush)
-  # --yolo belongs to the interactive command only; `crush run` never prompts.
-  if [[ -n ${prompt:-} ]]; then
+  # --yolo belongs to the interactive command only; `crush run` never prompts,
+  # because it approves every tool call itself. The interactive command takes
+  # no starting prompt, so a supervised one is handed over to paste instead.
+  if [[ -n ${prompt:-} && $supervised == "true" ]]; then
+    command=(omarchy-launch-crush "$prompt")
+  elif [[ -n ${prompt:-} ]]; then
     command=(crush run "$prompt")
   else
-    command=(crush --yolo)
+    command=(crush)
+    unattended --yolo
   fi
   ;;
 claude)
-  command=(claude --permission-mode auto)
+  # Named outright when supervised, so a defaultMode in the user's settings
+  # can't turn the prompts back off.
+  if [[ $supervised == "true" ]]; then
+    command=(claude --permission-mode default)
+  else
+    command=(claude --permission-mode auto)
+  fi
   [[ -n ${prompt:-} ]] && command+=(-- "$prompt")
   ;;
 grok)
-  command=(grok --permission-mode bypassPermissions)
+  command=(grok)
+  unattended --permission-mode bypassPermissions
   [[ -n ${prompt:-} ]] && command+=(-- "$prompt")
   ;;
 openclaw)
@@ -92,7 +123,13 @@ openclaw)
   [[ -n ${prompt:-} ]] && command+=(--message "$prompt")
   ;;
 codex)
-  command=(codex --approve-for-me)
+  # Supervised, it runs in the read-only sandbox and asks before anything more,
+  # whatever approval policy the user's config.toml sets.
+  if [[ $supervised == "true" ]]; then
+    command=(codex --sandbox read-only --ask-for-approval on-request)
+  else
+    command=(codex --approve-for-me)
+  fi
   [[ -n ${prompt:-} ]] && command+=(-- "$prompt")
   ;;
 cursor-agent)
@@ -100,23 +137,29 @@ cursor-agent)
   # A one-word prompt naming a subcommand (update, login, help) still runs that
   # subcommand after a bare --, so the agent subcommand is named outright, and
   # -- after it keeps a prompt starting with a dash from being read as an option.
-  command=(cursor-agent --yolo --trust)
+  command=(cursor-agent)
+  unattended --yolo --trust
   [[ -n ${prompt:-} ]] && command+=(agent -- "$prompt")
   ;;
 hermes)
   if [[ -n ${prompt:-} ]]; then
-    command=(env -u HERMES_SESSION_SOURCE hermes chat --yolo --tui "--query=$prompt")
+    command=(env -u HERMES_SESSION_SOURCE hermes chat)
+    unattended --yolo
+    command+=(--tui "--query=$prompt")
   else
-    command=(hermes --yolo)
+    command=(hermes)
+    unattended --yolo
   fi
   ;;
 muse)
   # --approval-mode never skips the tool prompts but keeps Muse's own sandbox.
-  command=(muse --approval-mode never)
+  command=(muse)
+  unattended --approval-mode never
   [[ -n ${prompt:-} ]] && command+=(-- "$prompt")
   ;;
 omp)
-  command=(omp --auto-approve)
+  command=(omp)
+  unattended --auto-approve
   [[ -n ${prompt:-} ]] && command+=(-- "$prompt")
   ;;
 ori)
